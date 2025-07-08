@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 
 import whisper
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+
 
 ## 디렉토리 설정
 ## 동영상이 저장되는 폴더 :uploads
@@ -19,29 +21,42 @@ model = whisper.load_model('small')
 
 app = FastAPI()
 
+origins = [
+    "http://localhost",
+    "http://localhost:3000",  # React 앱이 실행되는 주소 (가장 중요)
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 @app.get('/')
 def index():
     return '환영합니다.'
 
-## 요청 URL :/create_subtitle_video
+## 요청 URL :/create_subtitled_video (클라이언트 코드와 일치하도록 수정)
 ## 요청 method : post
 ## return :요청 처리됨
-@app.post('/create_subtitle_video')
-async def create_subtitle_video(file: UploadFile = File(...)):
+@app.post('/create_subtitled_video')
+async def create_subtitled_video(file: UploadFile = File(...)):
     print('\n=== 비디오 처리 시작 ===')
     ## video 파일명 지정
-    ## temp_video_path = /uploads/temp_video_20250707_1720.mp4
+    ## temp_video_path = ./uploads/temp_video_20250707_1720.mp4
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    temp_video_path = os.path.join(UPLOAD_DIR,f'/temp_video_{timestamp}.mp4')
+    temp_video_path = os.path.join(UPLOAD_DIR, f'temp_video_{timestamp}.mp4') # 경로 수정
     # print(temp_video_path)
 
     ## 업로드 영상 저장
     contents = await file.read()
     ## with문 사용하여 쓰기 작업: wb
-    ## 파일 ㅈ경로 및 파일명 : temp_video_path
+    ## 파일 경로 및 파일명 : temp_video_path
 
-    with open(temp_video_path, 'wb') as file: ##wb 바이너리
-        file.write(contents)
+    with open(temp_video_path, 'wb') as f: # 변수명을 file에서 f로 변경 (일반적인 컨벤션)
+        f.write(contents)
 
     print('whisper로 자막 추출시작')
     result = model.transcribe(temp_video_path)
@@ -50,21 +65,30 @@ async def create_subtitle_video(file: UploadFile = File(...)):
 
     ## srt 파일 : 파일명 지정
     srt_filename = f'subtitle_{timestamp}.srt'
-    srt_path =os.path.join(OUTPUT_DIR, srt_filename)
+    srt_path = os.path.join(OUTPUT_DIR, srt_filename)
 
     ## srt 파일 생성
     ## with문 사용: 쓰기 작업
-    with open(srt_path, 'w', encoding='utf-8') as file:
+    with open(srt_path, 'w', encoding='utf-8') as f: # 변수명을 file에서 f로 변경
         for i, seg in enumerate(segments, 1):
             start = format_time(seg['start'])
             end = format_time(seg['end'])
             text = seg['text'].strip()
 
-            file.write(f'{i}\n')
-            file.write(f'{start} --> {end}\n')
-            file.write(f'{text}\n\n')
+            f.write(f'{i}\n')
+            f.write(f'{start} --> {end}\n')
+            f.write(f'{text}\n\n')
 
-    return '요청처리됨'
+    return {
+        "srt": [ # 클라이언트 코드와 일치하도록 "srt" 키 추가
+            {
+                "index": i,
+                "start": format_time(seg['start']),
+                "end": format_time(seg['end']),
+                "text": seg['text'].strip()
+            } for i, seg in enumerate(segments, 1)
+        ]
+    }
 
 def format_time(seconds):
     '''
@@ -77,8 +101,3 @@ def format_time(seconds):
     milliseconds = int((td.total_seconds()% 1) * 1000)
 
     return f'{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}'
-
-
-
-
-
